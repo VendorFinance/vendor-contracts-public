@@ -1,0 +1,28 @@
+{
+  "name": "hardhat-project",
+  "scripts": {
+    "fork": "npx hardhat node",
+    "test": "npx hardhat test test/*.js --network localhost"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.4",
+    "@nomiclabs/hardhat-waffle": "^2.0.2",
+    "@openzeppelin/hardhat-upgrades": "^1.16.1",
+    "@openzeppelin/test-helpers": "^0.5.15",
+    "chai": "^4.3.6",
+    "ethereum-waffle": "^3.4.0",
+    "ethers": "^5.5.3",
+    "hardhat": "^2.8.2",
+    "prettier": "^2.5.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.19"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^0.4.1",
+    "@openzeppelin/contracts": "^4.7.1",
+    "@openzeppelin/contracts-upgradeable": "^4.7.1",
+    "dotenv": "^14.2.0",
+    "hardhat-abi-exporter": "^2.8.0",
+    "hardhat-contract-sizer": "^2.4.0",
+    "hardhat-gas-reporter": "^1.0.7"
+  }
+}
