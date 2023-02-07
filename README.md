@@ -1,18 +1,18 @@
 # Vendor Finance
-**Vendor Finance** is a lending platform that allows any large token holder ofer loans on their own terms. Vendor loans are at fixed rates and non-liquidatable. All loans have an expiry. Lenders also have an ability to deploy pools for a limited set of people a.k.a private pools. 
+**Vendor Finance** is a lending platform that allows any large token holder to offer loans on their own terms. Vendor loans are at fixed rates and non-liquidatable. All loans have an expiry. Lenders also have an ability to deploy pools for a limited set of people a.k.a private pools. 
 
-In order to simulate the endless borrowing present on such platfroms like AAVE we have introduced the concept of rollovers. Given that certain criterias are met the borrowers can rollover the debt from one pool to a new pool with a longer expiry even if the second one had not been seeded.
+In order to simulate the endless borrowing present on such platfroms like AAVE, we have introduced the concept of rollovers. Given that certain criterias are met, the borrowers can rollover the debt from one pool to a new pool with a longer expiry even if the second one had not been seeded.
 
 Vendor Finance had not yet undergone a formal code review process, so please use it at your own risk.
 
 
 ## Contracts
-`VendorPoolFactory` - This is a factory contract that allows to deploy isolated lending pools permissionlesly. Both lend and collateral tokens must be whitelisted by the Vendor protocol first. On creation of the lending pool factory passes all the required parameters as well as computes any possible discounts the lender might have. We will describe the discounts in the section on `LicenseEngine`
+`VendorPoolFactory` - This is a factory contract that deploys isolated lending pools permissionlesly. Both lend and collateral tokens must be whitelisted by the Vendor protocol first. On creation of the lending pool, the factory passes all required parameters, as well as computes any possible discounts the lender might have. We will describe the discounts in the section on `LicenseEngine`
 
 `VendorFeesManager` - This contract keeps track of the borrowing fee rates for each pool as well as the fee type for each pool. There are 2 types of borrowing fees:
 
 - Constant - rate is set to certain number in % and no matter at what moment in the lifespan of the pool borrower borrows the funds borrower will always be charged a flat fee. 
-- Dynamic - lenders set the rate as annualized fee. So if dynamic rate is set to 10% that means that if the pool was was 1 year long borrowers would need to pay 10% as a fee if they borrowed as soon as the pool was created. Then the effective rate will go down to ensure that the borrower always pays 10% when annualized. So if one borrowes 6 months into the existence of this pool they will have an effective rate of 5%.   
+- Dynamic - lenders set the rate as annualized fee. So if dynamic rate is set to 10% that means that if the pool was 1 year long borrowers would need to pay 10% as a fee if they borrowed as soon as the pool was created. Then the effective rate will go down to ensure that the borrower always pays 10% when annualized. So if one borrowes 6 months into the existence of this pool they will have an effective rate of 5%.   
 
 `VendorLicenseEngine` - Vendor protocol will sell licenses in a form of an NFT that can grant certain benefits to lenders holding them. Each license NFT comes with a discount that is applied to the fees charged by Vendor both on collaral defaulted and interest made, amount of pools that can be deployed using this NFT and the time span that this NFT will be active for. If one lender holds more than 1 NFTs the one with the highest discount should be applied. 
 
