@@ -17,9 +17,13 @@ interface ILendingPool is IStructs {
         uint256 borrowAmount,
         uint48 currentFeeRate
     );
+    event RollOver(address pool, uint256 colRolled);
+    event Collect(uint256 treasuryLend, uint256 treasuryCol, uint256 lenderLend, uint256 lenderCol);
+    event BalanceChange(address token, bool incoming, uint256 amount);
     event Repay(address borrower, uint256 colReturned, uint256 repayAmount);
     event UpdateExpiry(uint48 newExpiry);
     event AddBorrower(address newBorrower);
+    event Pause(uint256 disabled);
 
     function initialize(Data calldata data) external;
 
@@ -47,4 +51,6 @@ interface ILendingPool is IStructs {
     function borrowers(address borrower) external view returns (uint256);
 
     function disabledBorrow() external view returns (uint256);
+
+    function collect() external;
 }

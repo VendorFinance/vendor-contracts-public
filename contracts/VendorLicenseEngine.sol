@@ -31,7 +31,7 @@ contract VendorLicenseEngine is
 
     Counters.Counter private _tokenIdCounter;
 
-    constructor(address _factory) ERC721("VendorLicense", "VNDRL") {
+    constructor(address _factory) ERC721("Vendor License", "VNDRL") {
         baseURI = "https://vendor.finance/license/";
         factory = _factory;
     }

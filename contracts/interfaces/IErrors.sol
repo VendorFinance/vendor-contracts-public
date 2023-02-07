@@ -113,15 +113,18 @@ interface IErrors {
     /// @notice Error for when the pegs setting on contruction of the oracle failed dur to bad arguments
     error InvalidParameters();
 
-    // @notice Error for when the token pair selected is not supported
+    /// @notice Error for when the token pair selected is not supported
     error InvalidTokenPair();
 
-    // @notice Error for when chainlink sent the incorrect price
+    /// @notice Error for when chainlink sent the incorrect price
     error RoundIncomplete();
 
-    // @notice Error for when chainlink sent the incorrect price
+    /// @notice Error for when chainlink sent the incorrect price
     error StaleAnswer();
 
-    // @notice Error for when the feed address is already set and owner is trying to alter it
+    /// @notice Error for when the feed address is already set and owner is trying to alter it
     error FeedAlreadySet();
+
+    /// @notice Error for when the pool is not whitelisted for rollover
+    error PoolNotWhitelisted();
 }

@@ -46,6 +46,8 @@ contract LendingPool is
     uint256 public disabledBorrow;                  // If lender disables borrows, different from emergency pause
     uint256 public isPrivate;                       // If true anyone can borrow, otherwise only ones in `borrowers` mapping
     uint256 public undercollateralized;             // If allows borrowing when collateral bellow mint ratio
+    address private _grantedOwner;
+    mapping(address => bool) public allowedRollovers;      // Pools to which we can rollover.
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -84,7 +86,7 @@ contract LendingPool is
     function deposit(uint256 _depositAmount) external nonReentrant {
         onlyOwner();
         onlyNotPaused();
-        lendToken.safeTransferFrom(msg.sender, address(this), _depositAmount);
+        _safeTransferFrom(lendToken, msg.sender, address(this), _depositAmount);
     }
 
     ///@notice                  Withdraw the lend token from the pool. Only amount minus fees owed to Vendor will be withdrawable
@@ -149,7 +151,7 @@ contract LendingPool is
         userReport.borrowAmount += rawPayoutAmount;
         uint256 fee = feeManager.getFee(address(this), rawPayoutAmount);
         userReport.totalFees += fee;
-        colToken.safeTransferFrom(msg.sender, address(this), _colDepositAmount);
+        _safeTransferFrom(colToken, msg.sender, address(this), _colDepositAmount);
         userReport.colAmount += _colDepositAmount;
 
         if (!factory.pools(msg.sender)) {
@@ -192,8 +194,9 @@ contract LendingPool is
     /// to have more collateral token on hand it is easier to ask them to return a fraction of borrowed funds using formula:
     ///             oldColAmount * (oldMR - newMR) ;
     /// This formula basically computes how much over the new mint ratio you were lent given you collateral deposit.
-    function rollOver(address _newPool) external nonReentrant {
+    function rollOver(address _newPool, uint256 _rate) external nonReentrant {
         onlyNotPaused();
+        if (!allowedRollovers[_newPool]) revert PoolNotWhitelisted();
         UserReport storage userReport = debt[msg.sender];
         if (block.timestamp > expiry) revert PoolClosed();
         if (userReport.borrowAmount == 0) revert NoDebt();
@@ -221,7 +224,12 @@ contract LendingPool is
             )
         ) revert NotValidPrice();
 
+        uint256 borrowRate = feeManager.getCurrentRate(_newPool);
+        if (_rate < borrowRate)
+            revert FeeTooHigh();
+
         colToken.approve(_newPool, userReport.colAmount);
+        uint256 diffToReimburse;
         if (newPool.mintRatio() <= mintRatio) {
             // Need to repay some loan since you can not borrow as much in a new pool
             uint256 diffToRepay = VendorUtils._computePayoutAmount(
@@ -230,7 +238,8 @@ contract LendingPool is
                 address(colToken),
                 address(lendToken)
             );
-            lendToken.safeTransferFrom(
+            _safeTransferFrom(
+                lendToken,
                 msg.sender,
                 address(this),
                 diffToRepay + userReport.totalFees
@@ -238,17 +247,18 @@ contract LendingPool is
             newPool.borrowOnBehalfOf(
                 msg.sender,
                 userReport.colAmount,
-                feeManager.getCurrentRate(_newPool),
+                borrowRate,
                 userReport.borrowAmount - diffToRepay
             );
         } else {
             // Reimburse the borrower
-            uint256 diffToReimburse = VendorUtils._computeReimbursement(
+            diffToReimburse = VendorUtils._computeReimbursement(
                 userReport.colAmount,
                 mintRatio,
                 newPool.mintRatio()
             );
-            lendToken.safeTransferFrom(
+            _safeTransferFrom(
+                lendToken,
                 msg.sender,
                 address(this),
                 userReport.totalFees
@@ -257,40 +267,17 @@ contract LendingPool is
             newPool.borrowOnBehalfOf(
                 msg.sender,
                 userReport.colAmount - diffToReimburse,
-                feeManager.getCurrentRate(_newPool),
+                borrowRate,
                 userReport.borrowAmount
             );
         }
         totalFees += userReport.totalFees;
 
-        emit Repay(msg.sender, userReport.colAmount, userReport.borrowAmount);
+        emit RollOver(_newPool, userReport.colAmount - diffToReimburse);
         //Clean users debt in current pool
         userReport.colAmount = 0;
         userReport.borrowAmount = 0;
         userReport.totalFees = 0;
-    }
-
-    ///@notice                  Rollover available lent funds into a new pool after expiry
-    ///@dev                     Funds that are owed to Vendor will not be rolled over
-    ///@param _newPool          Address of the destination pool
-    function lenderRollOver(address _newPool, uint256 _amount)
-        external
-        nonReentrant
-    {
-        onlyOwner();
-        if (
-            lendToken.balanceOf(address(this)) <
-            _amount + ((totalFees * protocolFee) / HUNDRED_PERCENT)
-        ) revert InsufficientBalance();
-        onlyNotPaused();
-        VendorUtils._validateNewPool(
-            _newPool,
-            address(factory),
-            address(lendToken),
-            owner,
-            expiry
-        );
-        _safeTransfer(lendToken, _newPool, _amount);
     }
 
     ///@notice                  Repay the loan on behalf of a different wallet
@@ -312,7 +299,7 @@ contract LendingPool is
 
         //Repay the fee first.
         uint256 initialFeeOwed = userReport.totalFees;
-        lendToken.safeTransferFrom(msg.sender, address(this), _repayAmount);
+        _safeTransferFrom(lendToken, msg.sender, address(this), _repayAmount);
         if (repayRemainder <= userReport.totalFees) {
             userReport.totalFees -= repayRemainder;
             totalFees += initialFeeOwed - userReport.totalFees;
@@ -348,22 +335,26 @@ contract LendingPool is
         onlyNotPaused();
         if (block.timestamp <= expiry) revert PoolActive();
         // Send the protocol fee to treasury
+        uint256 treasuryLend = (totalFees * protocolFee) / HUNDRED_PERCENT;
+        uint256 treasuryCol = (colToken.balanceOf(address(this)) * protocolColFee) / HUNDRED_PERCENT;
         _safeTransfer(
             lendToken,
             treasury,
-            (totalFees * protocolFee) / HUNDRED_PERCENT
+            treasuryLend
         );
         totalFees = 0;
         _safeTransfer(
             colToken,
             treasury,
-            (colToken.balanceOf(address(this)) * protocolColFee) /
-                HUNDRED_PERCENT
+            treasuryCol
         );
 
         // Send the remaining funds to the lender
-        _safeTransfer(lendToken, owner, lendToken.balanceOf(address(this)));
-        _safeTransfer(colToken, owner, colToken.balanceOf(address(this)));
+        uint256 lenderLend = lendToken.balanceOf(address(this));
+        uint256 lenderCol = colToken.balanceOf(address(this));
+        _safeTransfer(lendToken, owner, lenderLend);
+        _safeTransfer(colToken, owner, lenderCol);
+        emit Collect(treasuryLend, treasuryCol, lenderLend, lenderCol);
     }
 
     /* ========== SETTERS ========== */
@@ -380,6 +371,7 @@ contract LendingPool is
     function setBorrow(uint256 _disabled) external {
         onlyOwner();
         disabledBorrow = _disabled;
+        emit Pause(_disabled);
     }
 
     ///@notice                  Allow the lender to add a private borrower
@@ -388,6 +380,12 @@ contract LendingPool is
         onlyOwner();
         borrowers[_newBorrower] = 1;
         emit AddBorrower(_newBorrower);
+    }
+
+    ///@notice                  Allow the lender to select rollover pools
+    function setRolloverPool(address _pool, bool _enabled) external {
+        onlyOwner();
+        allowedRollovers[_pool] = _enabled;
     }
 
     /* ========== UTILITY ========== */
@@ -417,25 +415,35 @@ contract LendingPool is
         uint256 bal = _token.balanceOf(address(this));
         if (bal < _amount) {
             _token.safeTransfer(_account, bal);
+            emit BalanceChange(address(_token), false, bal);
         } else {
             _token.safeTransfer(_account, _amount);
+            emit BalanceChange(address(_token), false, _amount);
         }
     }
 
-    ///@notice                  Transfer the ownership over the pool.
-    ///@dev                     This will also transfer the right to claim all defaults and fees
-    function transferOwnership(address _owner) external {
+    function _safeTransferFrom(
+        IERC20 _token,
+        address _from,
+        address _to,
+        uint256 _amount
+    ) private {
+        _token.safeTransferFrom(_from, _to, _amount);
+        emit BalanceChange(address(_token), true, _amount);
+    }
+
+    ///@notice                  First step in a process of changing the owner
+    function grantOwnership(address _newOwner) external {
         onlyOwner();
-        owner = _owner;
+        _grantedOwner = _newOwner;
     }
 
-    ///@notice                  Contract version for history
-    ///@return                  Contract version
-    function version() external pure returns (uint256) {
-        return 1;
+    ///@notice                  Second step in a process of changing the owner
+    function claimOwnership() external {
+        if (_grantedOwner != msg.sender) revert NotGranted();
+        owner = _grantedOwner;
+        _grantedOwner = address(0);
     }
-
-
 
     /* ========== MODIFIERS ========== */
     ///@notice                  Owner is the deployer of the pool, not Vendor
